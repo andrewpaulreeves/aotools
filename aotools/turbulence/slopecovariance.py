@@ -21,6 +21,8 @@ import scipy.special
 
 from ..functions import circle
 
+ASEC2RAD = (numpy.pi / 180) / 3600
+
 class CovarianceMatrix(object):
     """
     A creator of slope covariance matrices in Von Karmon turbulence, based on the paper by Martin et al, SPIE, 2012.
@@ -45,12 +47,13 @@ class CovarianceMatrix(object):
         layer_altitudes (ndarray): The altitude of each turbulence layer in meters
         layer_r0s (ndarray): The Fried parameter of each turbulence layer
         layer_L0s (ndarray): The outer-scale of each layer in metres
+        wfs_pixel_scales (ndarray, optional): Array of WFS Pixel scales in asecs per pixel. If ``None``, then values are in radians
         threads (int, optional): Number of processes to use for calculation. default is 1
     """
 
     def __init__(
         self, n_wfs, pupil_masks, telescope_diameter, subap_diameters, gs_altitudes, gs_positions, wfs_wavelengths,
-        n_layers, layer_altitudes, layer_r0s, layer_L0s, threads=1):
+        n_layers, layer_altitudes, layer_r0s, layer_L0s, wfs_pixel_scales=None, threads=1):
 
 
         self.threads = threads
@@ -67,7 +70,6 @@ class CovarianceMatrix(object):
         self.layer_altitudes = layer_altitudes
         self.layer_r0s = layer_r0s
         self.layer_L0s = layer_L0s
-        print("n_layers: {}".format(n_layers))
 
         self.n_subaps = []
         self.total_subaps = 0
@@ -76,6 +78,12 @@ class CovarianceMatrix(object):
             self.total_subaps += self.n_subaps[wfs_n]
         self.n_subaps = numpy.array(self.n_subaps, dtype="int")
         self.total_subaps = int(self.total_subaps)
+
+        if wfs_pixel_scales is None:
+            self.wfs_pixel_scales = numpy.ones(self.n_wfs)
+        else:
+            # Want pixel scale in pixels per radian
+            self.wfs_pixel_scales = 1./(numpy.array(wfs_pixel_scales) * ASEC2RAD)
 
 
     def make_covariance_matrix(self):
@@ -158,6 +166,7 @@ class CovarianceMatrix(object):
                             self.n_subaps[wfs_i], self.n_subaps[wfs_j],
                             self.subap_layer_positions[layer_n][wfs_i], self.subap_layer_positions[layer_n][wfs_j],
                             self.subap_layer_diameters[layer_n][wfs_i], self.subap_layer_diameters[layer_n][wfs_j],
+                            self.wfs_pixel_scales[wfs_i], self.wfs_pixel_scales[wfs_j],
                             self.layer_r0s[layer_n], self.layer_L0s[layer_n])
 
                     subap_ni = self.n_subaps[:wfs_i].sum()
@@ -177,7 +186,7 @@ class CovarianceMatrix(object):
 
                     self.covariance_matrix[
                             cov_mat_coord_x1: cov_mat_coord_x2, cov_mat_coord_y1: cov_mat_coord_y2
-                            ] += cov_xx * r0_scale
+                            ] += cov_yy * r0_scale
                     self.covariance_matrix[
                             cov_mat_coord_x1 + self.n_subaps[wfs_i]: cov_mat_coord_x2 + self.n_subaps[wfs_i],
                             cov_mat_coord_y1: cov_mat_coord_y2] += cov_xy * r0_scale
@@ -188,7 +197,7 @@ class CovarianceMatrix(object):
                     self.covariance_matrix[
                             cov_mat_coord_x1 + self.n_subaps[wfs_i]: cov_mat_coord_x2 + self.n_subaps[wfs_i],
                             cov_mat_coord_y1 + self.n_subaps[wfs_j]: cov_mat_coord_y2 + self.n_subaps[wfs_j]
-                            ] += cov_yy * r0_scale
+                            ] += cov_xx * r0_scale
 
     def _make_covariance_matrix_mp(self, threads):
         pool = multiprocessing.Pool(threads)
@@ -206,6 +215,7 @@ class CovarianceMatrix(object):
                             self.n_subaps[wfs_i], self.n_subaps[wfs_j],
                             self.subap_layer_positions[layer_n][wfs_i], self.subap_layer_positions[layer_n][wfs_j],
                             self.subap_layer_diameters[layer_n][wfs_i], self.subap_layer_diameters[layer_n][wfs_j],
+                            self.wfs_pixel_scales[wfs_i], self.wfs_pixel_scales[wfs_j],
                             self.layer_r0s[layer_n], self.layer_L0s[layer_n]))
 
             self.cov_mats = pool.map(wfs_covariance_mpwrap, args)
@@ -232,7 +242,7 @@ class CovarianceMatrix(object):
 
                     self.covariance_matrix[
                             cov_mat_coord_x1: cov_mat_coord_x2, cov_mat_coord_y1: cov_mat_coord_y2
-                            ] += cov_xx * r0_scale
+                            ] += cov_yy * r0_scale
                     self.covariance_matrix[
                             cov_mat_coord_x1 + self.n_subaps[wfs_i]: cov_mat_coord_x2 + self.n_subaps[wfs_i],
                             cov_mat_coord_y1: cov_mat_coord_y2] += cov_xy * r0_scale
@@ -243,7 +253,7 @@ class CovarianceMatrix(object):
                     self.covariance_matrix[
                             cov_mat_coord_x1 + self.n_subaps[wfs_i]: cov_mat_coord_x2 + self.n_subaps[wfs_i],
                             cov_mat_coord_y1 + self.n_subaps[wfs_j]: cov_mat_coord_y2 + self.n_subaps[wfs_j]
-                            ] += cov_yy * r0_scale
+                            ] += cov_xx * r0_scale
 
                     thread_n += 1
 
@@ -271,7 +281,9 @@ def wfs_covariance_mpwrap(args):
     return wfs_covariance(*args)
 
 
-def wfs_covariance(n_subaps1, n_subaps2, wfs1_positions, wfs2_positions, wfs1_diam, wfs2_diam, r0, L0):
+def wfs_covariance(
+            n_subaps1, n_subaps2, wfs1_positions, wfs2_positions, wfs1_diam, wfs2_diam,
+            wfs1_pxlscale, wfs2_pxlscale, r0, L0):
     """
     Calculates the covariance between 2 WFSs
 
@@ -292,9 +304,9 @@ def wfs_covariance(n_subaps1, n_subaps2, wfs1_positions, wfs2_positions, wfs1_di
     xy_seperations = calculate_wfs_seperations(n_subaps1, n_subaps2, wfs1_positions, wfs2_positions)
 
     # print("Min seperation: {}".format(abs(xy_seperations).min()))
-    cov_xx = compute_covariance_xx(xy_seperations, wfs1_diam, wfs2_diam, r0, L0)
-    cov_yy = compute_covariance_yy(xy_seperations, wfs1_diam, wfs2_diam, r0, L0)
-    cov_xy = compute_covariance_xy(xy_seperations, wfs1_diam, wfs2_diam, r0, L0)
+    cov_xx = compute_covariance_xx(xy_seperations, wfs1_diam, wfs2_diam, r0, L0) * wfs1_pxlscale * wfs2_pxlscale
+    cov_yy = compute_covariance_yy(xy_seperations, wfs1_diam, wfs2_diam, r0, L0) * wfs1_pxlscale * wfs2_pxlscale
+    cov_xy = compute_covariance_xy(xy_seperations, wfs1_diam, wfs2_diam, r0, L0) * wfs1_pxlscale * wfs2_pxlscale
 
 
     return cov_xx, cov_yy, cov_xy
@@ -442,7 +454,7 @@ def mirror_covariance_matrix(cov_mat, n_subaps):
 
                 cov_mat[nn1: nn2, mm1: mm2] = (
                     numpy.swapaxes(cov_mat[n1: n2, m1: m2], 1, 0)
-                )
+                ).T
 
                 m1 += 2 * n_subaps[m]
         n1 += 2 * n_subaps[n]
