@@ -5,18 +5,9 @@ Infinite Phase Screens
 An implementation of the "infinite phase screen", as deduced by Francois Assemat and Richard W. Wilson, 2006.
 """
 
-from scipy.special import gamma, kv
 from scipy import linalg
-from scipy.interpolate import interp2d
 import numpy
-from numpy import pi
-
-# Numba compiles python code to machine code for faster execution
-try:
-    import numba
-except:
-    numba = None    
-
+import numba
 
 from . import phasescreen, turb
 
@@ -184,14 +175,18 @@ class PhaseScreen(object):
         Makes the initial screen usign FFT method that can be extended 
         """
 
+        # phase screen will make it *really* random if no seed at all given.
+        # If a seed is here, screen must be repeatable wiht same seed
+        self._R = numpy.random.default_rng(self.random_seed)
+
         self._scrn = phasescreen.ft_phase_screen(
-            self.r0, self.stencil_length, self.pixel_scale, self.L0, 1e-10
+            self.r0, self.stencil_length, self.pixel_scale, self.L0, 1e-10, seed=self._R
         )
 
         self._scrn = self._scrn[:, :self.nx_size]
 
     def get_new_row(self):
-        random_data = numpy.random.normal(0, 1, size=self.nx_size)
+        random_data = self._R.normal(0, 1, size=self.nx_size)
 
         stencil_data = self._scrn[(self.stencil_coords[:, 0], self.stencil_coords[:, 1])]
         new_row = self.A_mat.dot(stencil_data) + self.B_mat.dot(random_data)
@@ -213,7 +208,7 @@ class PhaseScreen(object):
     @property
     def scrn(self):
         """
-        The current phase map held in the PhaseScreen object.
+        The current phase map held in the PhaseScreen object in radians.
         """
         return self._scrn[:self.requested_nx_size, :self.requested_nx_size]
 
@@ -259,7 +254,7 @@ class PhaseScreenVonKarman(PhaseScreen):
     On initialisation an initial phase screen is calculated using an FFT based method.
     When ``add_row`` is called, a new vector of phase is added to the phase screen using `nCols`
     columns of previous phase. Assemat & Wilson claim that two columns are adequate for good
-    atmospheric statistics. The phase in the screen data is always accessed as ``<phasescreen>.scrn``.
+    atmospheric statistics. The phase in the screen data is always accessed as ``<phasescreen>.scrn`` and is in radians.
 
         .. note::
         The phase screen is returned on each iteration as a 2d array, with each element representing the phase 
@@ -272,6 +267,7 @@ class PhaseScreenVonKarman(PhaseScreen):
         pixel_scale(float): Size of each phase pixel in metres
         r0 (float): fried parameter (metres)
         L0 (float): Outer scale (metres)
+        random_seed (int, optional): seed for the random number generator
         n_columns (int, optional): Number of columns to use to continue screen, default is 2
     """
     def __init__(self, nx_size, pixel_scale, r0, L0, random_seed=None, n_columns=2):
@@ -286,8 +282,7 @@ class PhaseScreenVonKarman(PhaseScreen):
         self.stencil_length_factor = 1
         self.stencil_length = self.nx_size
 
-        if random_seed is not None:
-            numpy.random.seed(random_seed)
+        self.random_seed = random_seed
 
         self.set_X_coords()
         self.set_stencil_coords()
@@ -373,7 +368,7 @@ class PhaseScreenKolmogorov(PhaseScreen):
     
     On initialisation an initial phase screen is calculated using an FFT based method.
     When ``add_row`` is called, a new vector of phase is added to the phase screen. The phase in the screen data
-    is always accessed as ``<phasescreen>.scrn``.
+    is always accessed as ``<phasescreen>.scrn`` and is in radians.
 
     .. note::
         The phase screen is returned on each iteration as a 2d array, with each element representing the phase 
@@ -398,9 +393,7 @@ class PhaseScreenKolmogorov(PhaseScreen):
         self.L0 = L0
         self.stencil_length_factor = stencil_length_factor
         self.stencil_length = stencil_length_factor * self.nx_size
-
-        if random_seed is not None:
-            numpy.random.seed(random_seed)
+        self.random_seed = random_seed
 
         # Coordinate of Fried's "reference point" that stops the screen diverging
         self.reference_coord = (1, 1)
@@ -416,7 +409,7 @@ class PhaseScreenKolmogorov(PhaseScreen):
         self.make_initial_screen()
 
     def get_new_row(self):
-        random_data = numpy.random.normal(0, 1, size=self.nx_size)
+        random_data = self._R.normal(0, 1, size=self.nx_size)
 
         stencil_data = self._scrn[(self.stencil_coords[:, 0], self.stencil_coords[:, 1])]
 
