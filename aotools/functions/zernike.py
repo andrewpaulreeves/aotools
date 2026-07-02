@@ -1,11 +1,7 @@
 import math
 
 import numpy
-<<<<<<< HEAD
-
-=======
 import math
->>>>>>> 9a2dfc87160b8572abc5e0164c5ccfc5ef2b21da
 from . import circle
 
 def phaseFromZernikes(zCoeffs, size, norm="noll", rot=0):
@@ -97,13 +93,8 @@ def zernikeRadialFunc(n, m, r):
         R += numpy.array(r**(n - 2 * i) * (((-1)**(i)) *
                          math.factorial(n - i)) /
                          (math.factorial(i) *
-<<<<<<< HEAD
                           math.factorial(int(0.5 * (n + m) - i)) *
                           math.factorial(int(0.5 * (n - m) - i))),
-=======
-                          math.factorial((n + m)//2 - i) *
-                          math.factorial((n - m)//2 - i)),
->>>>>>> 9a2dfc87160b8572abc5e0164c5ccfc5ef2b21da
                          dtype='float')
     return R
 
