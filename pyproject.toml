@@ -9,7 +9,7 @@ readme = {file = "README.rst", content-type = "text/x-rst"}
 license = {text = "LGPL-3.0"}
 authors = [
     {email = "andrewpaulreeves@gmail.com"},
-    {email = "matthew.townson@durham.ac.uk"},
+    {email = "matthew.townson@northumbria.ac.uk"},
 ]
 requires-python = ">=3.10"
 dynamic = ["version"]
